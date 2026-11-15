@@ -13,10 +13,20 @@
     color: #ddd; background: #000; font: 15px/1.6 -apple-system, "PingFang SC", sans-serif;
     text-align: center; padding: 16px;
   }
+  /* Touch shield for the swipe-back gesture: covers the video area but
+     stops 56px short of the bottom, so the player's own control bar
+     (progress, play/pause, captions, fullscreen) stays directly
+     tappable. Enabled only on touch devices (see script) so desktop
+     mouse clicks reach the player untouched. */
+  #shield {
+    position: absolute; left: 0; right: 0; top: 0; bottom: 56px;
+    display: none; z-index: 5; background: transparent; touch-action: none;
+  }
 </style>
 </head>
 <body>
 <div id="player"></div>
+<div id="shield"></div>
 <div id="msg"></div>
 <script>
 (function () {
@@ -111,6 +121,76 @@
       }
     } catch (err) { /* player not ready */ }
   });
+
+  // ---------------------------------------------------------------
+  // Swipe-back gesture channel. A gesture that starts on the video
+  // belongs to this document (and the YT iframe nested inside it) —
+  // the parent page can never see it. The transparent #shield over
+  // the video area (stopping 56px short of the bottom, so the
+  // player's own control bar stays directly tappable) recognizes the
+  // SAME iOS-style edge gesture the parent page uses: the touch
+  // starts within 24px of the left edge and slides right more than
+  // 60px with horizontal clearly dominating vertical (dx > 2×|dy|).
+  // On recognition it posts `ytp-swipe-back`; the parent runs its
+  // back action (open layer closes first, else leave the player).
+  // A plain tap on the shield still belongs to the player: it toggles
+  // play/pause through the API, exactly what a tap on the video does.
+  // The shield is enabled only on touch devices, so desktop mouse
+  // clicks reach the player untouched.
+  // ---------------------------------------------------------------
+  var shield = document.getElementById("shield");
+  if (shield && ("ontouchstart" in window || navigator.maxTouchPoints > 0)) {
+    shield.style.display = "block";
+    var gTracking = false;
+    var gFired = false;
+    var gStartX = 0;
+    var gStartY = 0;
+    var EDGE_PX = 24;
+    var THRESHOLD_PX = 60;
+    shield.addEventListener("touchstart", function (e) {
+      var t = e.touches.length === 1 ? e.touches[0] : null;
+      gTracking = !!t && t.clientX <= EDGE_PX;
+      gFired = false;
+      if (t) {
+        gStartX = t.clientX;
+        gStartY = t.clientY;
+      }
+    }, { passive: true });
+    shield.addEventListener("touchmove", function (e) {
+      if (!gTracking || gFired) return;
+      var t = e.touches[0];
+      if (!t) return;
+      var dx = t.clientX - gStartX;
+      var dy = t.clientY - gStartY;
+      if (dx > THRESHOLD_PX && dx > Math.abs(dy) * 2) {
+        gFired = true;
+        gTracking = false;
+        post({ type: "ytp-swipe-back" });
+      } else if (Math.abs(dy) > 48 && Math.abs(dy) > Math.abs(dx)) {
+        // Vertical-dominant move: not a back swipe — abandon.
+        gTracking = false;
+      }
+    }, { passive: true });
+    shield.addEventListener("touchend", function (e) {
+      gTracking = false;
+      if (gFired) return;
+      var t = e.changedTouches && e.changedTouches[0];
+      if (!t) return;
+      var dx = t.clientX - gStartX;
+      var dy = t.clientY - gStartY;
+      // Plain tap: the player's own tap behaviour, via the API.
+      if (Math.abs(dx) < 12 && Math.abs(dy) < 12 && player) {
+        try {
+          if (currentState() === 1) player.pauseVideo();
+          else player.playVideo();
+          reportTime();
+        } catch (err) { /* player not ready */ }
+      }
+    });
+    shield.addEventListener("touchcancel", function () {
+      gTracking = false;
+    });
+  }
 
   var tag = document.createElement("script");
   tag.src = "https://www.youtube.com/iframe_api";
