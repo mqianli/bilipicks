@@ -39,18 +39,29 @@
   var player = null;
   var timer = null;
 
+  function currentTime() {
+    try { return typeof player.getCurrentTime === "function" ? player.getCurrentTime() : 0; }
+    catch (e) { return 0; }
+  }
+  function currentRate() {
+    try { return typeof player.getPlaybackRate === "function" ? player.getPlaybackRate() : 1; }
+    catch (e) { return 1; }
+  }
+  function currentState() {
+    try { return typeof player.getPlayerState === "function" ? player.getPlayerState() : -1; }
+    catch (e) { return -1; }
+  }
+
+  // Time reports carry the playback rate so the parent can interpolate
+  // the playhead between reports instead of stepping at report rate.
+  function reportTime() {
+    if (!player) return;
+    post({ type: "ytp-time", t: currentTime(), state: currentState(), rate: currentRate() });
+  }
+
   function startTimer() {
     if (timer) return;
-    timer = setInterval(function () {
-      if (!player || typeof player.getCurrentTime !== "function") return;
-      try {
-        post({
-          type: "ytp-time",
-          t: player.getCurrentTime(),
-          state: typeof player.getPlayerState === "function" ? player.getPlayerState() : -1
-        });
-      } catch (e) { /* player not ready */ }
-    }, 250);
+    timer = setInterval(reportTime, 100);
   }
 
   window.onYouTubeIframeAPIReady = function () {
@@ -68,7 +79,13 @@
           startTimer();
         },
         onStateChange: function (e) {
-          post({ type: "ytp-state", state: e.data });
+          // State changes (play / pause / seek / buffering) re-anchor the
+          // parent's interpolation immediately, with the position and
+          // rate at this exact moment — no waiting for the next tick.
+          post({ type: "ytp-state", state: e.data, t: currentTime(), rate: currentRate() });
+        },
+        onPlaybackRateChange: function (e) {
+          post({ type: "ytp-rate", t: currentTime(), rate: e.data });
         },
         onError: function (e) {
           post({ type: "ytp-error", code: e.data });
@@ -84,10 +101,13 @@
       if (d.type === "ytp-seek" && typeof d.t === "number") {
         player.seekTo(d.t, true);
         player.playVideo();
+        reportTime();
       } else if (d.type === "ytp-play") {
         player.playVideo();
+        reportTime();
       } else if (d.type === "ytp-pause") {
         player.pauseVideo();
+        reportTime();
       }
     } catch (err) { /* player not ready */ }
   });
