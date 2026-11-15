@@ -61,12 +61,17 @@
     try { return typeof player.getPlayerState === "function" ? player.getPlayerState() : -1; }
     catch (e) { return -1; }
   }
+  function currentDuration() {
+    try { return typeof player.getDuration === "function" ? player.getDuration() : 0; }
+    catch (e) { return 0; }
+  }
 
   // Time reports carry the playback rate so the parent can interpolate
-  // the playhead between reports instead of stepping at report rate.
+  // the playhead between reports instead of stepping at report rate,
+  // and the duration so the parent can draw a progress bar.
   function reportTime() {
     if (!player) return;
-    post({ type: "ytp-time", t: currentTime(), state: currentState(), rate: currentRate() });
+    post({ type: "ytp-time", t: currentTime(), state: currentState(), rate: currentRate(), dur: currentDuration() });
   }
 
   function startTimer() {
@@ -117,6 +122,11 @@
         reportTime();
       } else if (d.type === "ytp-pause") {
         player.pauseVideo();
+        reportTime();
+      } else if (d.type === "ytp-set-rate" && typeof d.rate === "number" && d.rate > 0) {
+        // Playback-rate command from the parent's intensive-listening
+        // controls. onPlaybackRateChange confirms back with `ytp-rate`.
+        player.setPlaybackRate(d.rate);
         reportTime();
       }
     } catch (err) { /* player not ready */ }
