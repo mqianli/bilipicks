@@ -31,7 +31,11 @@
 <script>
 (function () {
   var params = new URLSearchParams(location.search);
-  var videoId = params.get("v") || "";
+  // The video id normally arrives as ?v= (framed relay / popup use).
+  // The desktop web build also delivers this page INLINE as an iframe
+  // srcdoc document, which has no URL query string at all — there the
+  // parent injects the id as a global just before this script runs.
+  var videoId = params.get("v") || (typeof window.__YTP_V__ === "string" ? window.__YTP_V__ : "");
   var msg = document.getElementById("msg");
   function showMsg(text) {
     msg.textContent = text;
