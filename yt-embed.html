@@ -38,7 +38,14 @@
     msg.style.display = "flex";
   }
   function post(data) {
-    try { window.parent.postMessage(data, "*"); } catch (e) { /* no parent */ }
+    // Framed use (the space's in-app player): report to the parent frame.
+    // Standalone-window use (the space's desktop web player opens this
+    // page as a popup, because the desktop shell blocks the frame):
+    // report to the opener as well. Both targets receive the same
+    // messages; each listener validates origin + source window, so a
+    // copy landing anywhere else is ignored there.
+    try { if (window.parent && window.parent !== window) window.parent.postMessage(data, "*"); } catch (e) { /* no parent */ }
+    try { if (window.opener) window.opener.postMessage(data, "*"); } catch (e) { /* no opener */ }
   }
   if (!/^[A-Za-z0-9_-]{11}$/.test(videoId)) {
     showMsg("视频地址不对。");
